@@ -7,7 +7,6 @@ use Heap::Simple::XS;
 use Params::Validate qw/validate_pos ARRAYREF/;
 
 ## NOTE: its my Bit::Vector, not the one on CPAN.
-## 
 use Bit::Vector;
 use Bit::Vector::Succinct;
 
@@ -237,4 +236,5 @@ sub select {
 __END__
 
 ## TODO
-## 最終的には必要な各ノードから必要なデータ以外全部破棄したツリーにする
+## 1. 最終的には必要な各ノードから必要なデータ以外全部破棄したツリーにする
+## new の引数をテキストのリファレンスに
