@@ -6,9 +6,8 @@ use base qw/Class::Accessor::Lvalue::Fast/;
 use Heap::Simple::XS;
 use Params::Validate qw/validate_pos ARRAYREF/;
 
-## NOTE: its my Bit::Vector, not the one on CPAN.
-use Bit::Vector;
 use Bit::Vector::Succinct;
+use Bit::Vector::Succinct::Raw;
 
 use Algorithm::WaveletTree::Node;
 use Algorithm::WaveletTree::Code;
@@ -26,7 +25,6 @@ sub new {
     $self->leaf_map   = {};
 
     ## FIXME: _build_count_table() とで unpack 2回やってる
-    # my $nchars = keys %{$self->code_map};
     for my $c (unpack('C*', $text)) {
         my $code = $self->code_map->{$c};
 
@@ -44,21 +42,10 @@ sub new {
             $node->bv    = undef;
         } else {
             $self->leaf_map->{ $node->ch } = $node;
+            $node->ch    = undef;
+            $node->count = undef
         }
     });
-
-#     require Data::Dumper;
-#     warn Data::Dumper::Dumper($self->tree);
-#     warn Data::Dumper::Dumper($self->code_map);
-
-#     while (my ($ch, $code) = each %{$self->code_map}) {
-#         warn sprintf "%d => %d (%s)\n", $ch, $code->code, unpack('b*', pack('C', $code->code));
-#     }
-
-#     travarse_tree($self->tree, sub {
-#          my $node = shift;
-#          warn sprintf "%s (%d)\n", $node->bv->as_bitstring, $node->bvcount;
-#     });
 
     return bless $self, $class;
 }
@@ -75,7 +62,30 @@ sub travarse_tree {
 }
 
 sub create_node {
-    return Algorithm::WaveletTree::Node->new;
+    my ($n1, $n2) = validate_pos(@_, 1, 1);
+
+    my $node = Algorithm::WaveletTree::Node->new;
+    $node->bvcount = 0;
+    $node->bv      = Bit::Vector::Succinct::Raw->new;
+    $node->count   = $n1->count + $n2->count;
+    $node->left    = $n1;
+    $node->right   = $n2;
+
+    $n1->parent = $node;
+    $n2->parent = $node;
+
+    return $node;
+}
+
+sub create_leaf {
+    my ($ch, $count) = validate_pos(@_, 1, 1);
+
+    my $leaf = Algorithm::WaveletTree::Node->new;
+    $leaf->ch      = $ch;
+    $leaf->count   = $count;
+    $leaf->is_leaf = 1;
+
+    return $leaf;
 }
 
 sub _build_count_table {
@@ -105,9 +115,7 @@ sub _build_huffman_tree {
     ## FIXME: ノードが一つしかなかった場合の対応
     for (my $i = 0; $i < 0x100; $i++) {
         if ($count->[$i] > 0) {
-            my $leaf = create_node;
-            $leaf->ch    = $i;
-            $leaf->count = $count->[$i];
+            my $leaf = create_leaf($i => $count->[$i]);
             $heap->key_insert( $leaf->count, $leaf );
         }
     }
@@ -116,17 +124,7 @@ sub _build_huffman_tree {
         my $n1 = $heap->extract_first;
 
         if (my $n2 = $heap->extract_first) {
-
-            my $new = create_node;
-            $new->count   = $n1->count + $n2->count;
-            $new->left    = $n1;
-            $new->right   = $n2;
-            $new->bvcount = 0;
-            $new->bv      = Bit::Vector->new;
-
-            $n1->parent = $new;
-            $n2->parent = $new;
-
+            my $new = create_node($n1, $n2);
             $heap->key_insert( $new->count, $new );
         } else {
             return $n1;
